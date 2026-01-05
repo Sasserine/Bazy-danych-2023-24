@@ -1,0 +1,401 @@
+{
+  "waluty": [
+    {
+      "id_waluty": [ "TINYINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "nazwa_waluty": [ "VARCHAR(25)", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "kurs_na_zł": [ "FLOAT", "NOT NULL" ]
+    },
+    {
+      "ostatnia_aktualizacja": [ "DATETIME", "NOT NULL" ]
+    }
+  ],
+  "kraje": [
+    {
+      "id_kraju": [ "SMALLINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "kraj": [ "VARCHAR(100)", "DEFAULT \"Polska\"", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "id_waluty": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "kr_wa FOREIGN KEY (id_waluty) REFERENCES waluty(id_waluty) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "miasta": [
+    {
+      "id_miasta": [ "MEDIUMINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "miasto": [ "VARCHAR(100)", "NOT NULL" ]
+    },
+    {
+      "id_kraju": [ "SMALLINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "województwo": [ "VARCHAR(30)" ]
+    },
+    {
+      "CONSTRAINT": [
+        "mi_kr FOREIGN KEY (id_kraju) REFERENCES kraje(id_kraju) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "adresy": [
+    {
+      "id_adresu": [ "MEDIUMINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "ulica": [ "VARCHAR(50)", "NOT NULL" ]
+    },
+    {
+      "numer_domu": [ "VARCHAR(10)", "NOT NULL" ]
+    },
+    {
+      "numer_mieszkania": [ "VARCHAR(10)", "DEFAULT NULL" ]
+    },
+    {
+      "id_miasta": [ "MEDIUMINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "ad_mi FOREIGN KEY (id_miasta) REFERENCES miasta(id_miasta) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "stanowiska": [
+    {
+      "id_stanowiska": [ "TINYINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "stanowisko": [ "VARCHAR(50)", "DEFAULT \"przewodnik\"", "NOT NULL" ]
+    },
+    {
+      "zarobek_netto": [ "SMALLINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "zarobek_brutto": [ "SMALLINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "dodatek_netto": [ "SMALLINT UNSIGNED" ]
+    },
+    {
+      "dodatek_brutto": [ "SMALLINT UNSIGNED" ]
+    },
+    {
+      "id_waluty": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "status_studenta": [ "BOOLEAN", "DEFAULT 0" ]
+    },
+    {
+      "CONSTRAINT": [
+        "st_wa FOREIGN KEY (id_waluty) REFERENCES waluty(id_waluty) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "pracownicy": [
+    {
+      "id_pracownika": [ "SMALLINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "imię": [ "VARCHAR(20)", "NOT NULL" ]
+    },
+    {
+      "nazwisko": [ "VARCHAR(50)", "NOT NULL" ]
+    },
+    {
+      "id_stanowiska": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "nr_dokumentu": [ "VARCHAR(30)", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "numer_telefonu": [ "VARCHAR(15)", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "email": [ "VARCHAR(50)", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "id_adresu": [ "MEDIUMINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "data_urodzenia": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "data_rozpoczęcia_pracy": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "pr_st FOREIGN KEY (id_stanowiska) REFERENCES stanowiska(id_stanowiska) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "pr_ad FOREIGN KEY (id_adresu) REFERENCES adresy(id_adresu) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "maile CHECK (email like \"%@%.%\")"
+      ]
+    }
+  ],
+  "wycieczki": [
+    {
+      "id_wycieczki": [ "SMALLINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "nazwa_wycieczki": [ "VARCHAR(200)", "NOT NULL" ]
+    },
+    {
+      "czy_w_aktualnej_ofercie": [ "BOOLEAN", "DEFAULT 1", "NOT NULL" ]
+    },
+    {
+      "rodzaj_wycieczki": [ "VARCHAR(70)", "NOT NULL" ]
+    },
+    {
+      "długość_wycieczki": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "id_kraju_głównego": [ "SMALLINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "czy_ekstremalna": [ "BOOLEAN", "DEFAULT 0" ]
+    },
+    {
+      "czy_zapewniony_nocleg": [ "BOOLEAN", "DEFAULT 0" ]
+    },
+    {
+      "czy_zapewnione_wyżywienie": [ "BOOLEAN", "DEFAULT 0" ]
+    },
+    {
+      "długość_zapewnionego_transportu": [ "MEDIUMINT UNSIGNED", "DEFAULT 0" ]
+    },
+    {
+      "cena_za_osobę": [ "FLOAT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "id_waluty": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "wartość_zniżki_grupowej": [ "DOUBLE", "DEFAULT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "wy_kr FOREIGN KEY (id_kraju_głównego) REFERENCES kraje(id_kraju) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "wy_wa FOREIGN KEY (id_waluty) REFERENCES waluty(id_waluty) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "grupy": [
+    {
+      "id_grupy": [ "MEDIUMINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "typ_grupy": [ "VARCHAR(50)", "NOT NULL" ]
+    },
+    {
+      "nazwa": [ "VARCHAR(70)", "DEFAULT NULL" ]
+    }
+  ],
+  "klienci": [
+    {
+      "id_klienta": [ "MEDIUMINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "imię": [ "VARCHAR(20)", "NOT NULL" ]
+    },
+    {
+      "nazwisko": [ "VARCHAR(50)", "NOT NULL" ]
+    },
+    {
+      "nr_telefonu": [ "VARCHAR(15)" ]
+    },
+    {
+      "data_urodzenia": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "nr_dokumentu": [ "VARCHAR(30)", "NOT NULL", "UNIQUE" ]
+    },
+    {
+      "id_adresu": [ "MEDIUMINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "imię_kontaktowe": [ "VARCHAR(20)" ]
+    },
+    {
+      "nazwisko_kontaktowe": [ "VARCHAR(50)" ]
+    },
+    {
+      "nr_telefonu_kontaktowy": [ "VARCHAR(15)" ]
+    },
+    {
+      "CONSTRAINT": [
+        "kl_ad FOREIGN KEY (id_adresu) REFERENCES adresy(id_adresu) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "grupa_klient": [
+    {
+      "id_grupy": [ "MEDIUMINT UNSIGNED" ]
+    },
+    {
+      "id_klienta": [ "MEDIUMINT UNSIGNED" ]
+    },
+    {
+      "czy_koordynator_grupy": [ "BOOLEAN", "DEFAULT 0", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "gk_gr FOREIGN KEY (id_grupy) REFERENCES grupy(id_grupy) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "gk_kl FOREIGN KEY (id_klienta) REFERENCES klienci(id_klienta) ON UPDATE CASCADE ON DELETE SET NULL"
+      ]
+    }
+  ],
+  "firmy": [
+    {
+      "id_firmy": [ "SMALLINT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "nazwa_firmy": [ "VARCHAR(100)", "NOT NULL" ]
+    },
+    {
+      "id_kraju": [ "SMALLINT UNSIGNED" ]
+    },
+    {
+      "NIP": [ "VARCHAR(10)" ]
+    },
+    {
+      "data_podpisania_kontraktu": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "data_obowiązywania_kontraktu": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "fi_kr FOREIGN KEY (id_kraju) REFERENCES kraje(id_kraju) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "koszt": [
+    {
+      "id_kosztu": [ "INT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "nazwa": [ "VARCHAR(50)", "NOT NULL" ]
+    },
+    {
+      "wartość": [ "FLOAT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "id_waluty": [ "TINYINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "czy_zależne_od_liczby_osób": [ "BOOLEAN" ]
+    },
+    {
+      "czy_zależne_od_dystansu": [ "BOOLEAN" ]
+    },
+    {
+      "czy_zależne_od_liczby_dni": [ "BOOLEAN", "NOT NULL" ]
+    },
+    {
+      "id_firmy": [ "SMALLINT UNSIGNED", "DEFAULT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "ko_fi FOREIGN KEY (id_firmy) REFERENCES firmy(id_firmy) ON UPDATE CASCADE ON DELETE SET NULL",
+        "ko_wa FOREIGN KEY (id_waluty) REFERENCES waluty(id_waluty) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "transakcje": [
+    {
+      "id_transakcji": [ "INT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "typ_transakcji": [ "VARCHAR(10)", "NOT NULL" ]
+    },
+    {
+      "numer_konta_płatnika": [ "VARCHAR(30)" ]
+    },
+    {
+      "id_płatnika": [ "MEDIUMINT UNSIGNED" ]
+    },
+    {
+      "data_transakcji": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "data_zaksięgowania": [ "DATE" ]
+    },
+    {
+      "CONSTRAINT": [
+        "tr CHECK (typ_transakcji in (\"przelew\",\"gotówka\",\"bon\"))",
+        "tr_kl FOREIGN KEY (id_płatnika) REFERENCES klienci(id_klienta) ON UPDATE CASCADE ON DELETE SET NULL"
+      ]
+    }
+  ],
+  "wyjazdy": [
+    {
+      "id_wyjazdu": [ "INT UNSIGNED", "AUTO_INCREMENT", "PRIMARY KEY" ]
+    },
+    {
+      "id_przewodnika": [ "SMALLINT UNSIGNED" ]
+    },
+    {
+      "id_agenta": [ "SMALLINT UNSIGNED" ]
+    },
+    {
+      "id_wycieczki": [ "SMALLINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "data_rozpoczęcia": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "data_zakończenia": [ "DATE", "NOT NULL" ]
+    },
+    {
+      "id_adresu_zbiórki": [ "MEDIUMINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "wyj_pr_prz FOREIGN KEY (id_przewodnika) REFERENCES pracownicy(id_pracownika) ON UPDATE CASCADE ON DELETE SET NULL",
+        "wyj_pr_ag FOREIGN KEY (id_agenta) REFERENCES pracownicy(id_pracownika) ON UPDATE CASCADE ON DELETE SET NULL",
+        "wyj_wc FOREIGN KEY (id_wycieczki) REFERENCES wycieczki(id_wycieczki) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "wyj_ad FOREIGN KEY (id_adresu_zbiórki) REFERENCES adresy(id_adresu) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "koszt_wyjazd": [
+    {
+      "id_kosztu": [ "INT UNSIGNED" ]
+    },
+    {
+      "id_wyjazdu": [ "INT UNSIGNED" ]
+    },
+    {
+      "CONSTRAINT": [
+        "kw_ko FOREIGN KEY (id_kosztu) REFERENCES koszt(id_kosztu) ON UPDATE CASCADE ON DELETE SET NULL",
+        "kw_wy FOREIGN KEY (id_wyjazdu) REFERENCES wyjazdy(id_wyjazdu) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ],
+  "grupa_wyjazd": [
+    {
+      "id_grupy": [ "MEDIUMINT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "id_wyjazdu": [ "INT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "id_transakcji": [ "INT UNSIGNED", "NOT NULL" ]
+    },
+    {
+      "CONSTRAINT": [
+        "gw_gr FOREIGN KEY (id_grupy) REFERENCES grupy(id_grupy) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "gw_wy FOREIGN KEY (id_wyjazdu) REFERENCES wyjazdy(id_wyjazdu) ON UPDATE CASCADE ON DELETE RESTRICT",
+        "gw_tr FOREIGN KEY (id_transakcji) REFERENCES transakcje(id_transakcji) ON UPDATE CASCADE ON DELETE RESTRICT"
+      ]
+    }
+  ]
+}
