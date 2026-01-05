@@ -1,0 +1,711 @@
+---
+title: "Wombat Grylls sp. z o.o."
+author: "Aleksandra Olczyk, Aleksandra Czujowska, Anastazja Kopycińska, Wiktoria Jarząb, Dominika Szulc"
+date: "2025-01-16"
+output:
+  prettydoc::html_pretty:
+    theme: cayman # to można zmienić
+    number_sections: true
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = TRUE)
+```
+
+```{r organizacja, include=FALSE}
+# biblioteki
+library(DBI)
+library(RMariaDB)
+library(dplyr)
+library(dbplyr)
+library(ggplot2)
+library(knitr)
+library(lubridate) # jakaś biblioteka do czasu
+library(RColorBrewer)
+
+# połączenie
+con <- DBI::dbConnect(
+  RMariaDB::MariaDB(),
+  dbname = "team06",
+  host = "giniewicz.it",
+  port = 3306,
+  user = "team06",
+  password = "te@mzaog"
+)
+
+# przypisanie tabel do zmiennych
+koszt_wyjazd <- collect(tbl(con, "koszt_wyjazd"))
+koszt <- collect(tbl(con, "koszt"))
+firmy <- tbl(con, "firmy")
+kraje <- collect(tbl(con, "kraje"))
+miasta <- collect(tbl(con, "miasta"))
+adresy <- collect(tbl(con, "adresy"))
+klienci <- collect(tbl(con, "klienci"))
+transakcje <- collect(tbl(con, "transakcje"))
+transakcje$typ_transakcji <- as.factor(transakcje$typ_transakcji)
+grupa_klient <- collect(tbl(con, "grupa_klient"))
+grupy <- tbl(con, "grupy")
+grupa_wyjazd <- collect(tbl(con, "grupa_wyjazd"))
+wyjazdy <- collect(tbl(con, "wyjazdy"))
+pracownicy <- collect(tbl(con, "pracownicy"))
+wycieczki <- collect(tbl(con, "wycieczki"))
+waluty <- collect(tbl(con, "waluty"))
+stanowiska <- collect(tbl(con, "stanowiska"))
+```
+
+
+```{r kraje_wycieczki, echo=FALSE}
+kraj_wycieczki <- wycieczki %>%
+  inner_join(kraje, by = c("id_kraju_głównego" = "id_kraju")) %>%
+    select(id_kraju_głównego, kraj) %>%
+  collect()
+
+lista_kraje <- paste(unique(kraj_wycieczki$kraj), collapse = ", ")
+```
+
+# Informacje o firmie
+
+  * **Liczba placówek:** 1
+  * **Lokalizacja:** Wrocław
+  * **Data pierwszej transakcji:** `r min(transakcje$data_transakcji, na.rm = TRUE)`
+  * **Liczba pracowników:** `r nrow(pracownicy)`
+  * **Kierunki wycieczek:** `r lista_kraje`
+
+Firma funkcjonuje już dekadę. Z tego powodu nadchodzi czas zmian i refleksji nad prosperowaniem biznesu.
+  
+
+# Zainteresowanie firmą
+
+## Najpopularniejsze wycieczki
+
+Zerknijmy na 3 najpopularniejsze wycieczki w naszej firmie. Porównując ich koszta i zyski możemy sprawdzić, czy są one dla nas opłacalne.
+
+```{r popularne1, message=FALSE, warning=FALSE, echo=FALSE}
+
+najpopularniejsze_wycieczki <- wyjazdy %>%
+  left_join(wycieczki,  by = "id_wycieczki")
+
+cena_za_osobę_zniżka <- wycieczki %>%
+  left_join(waluty, by = "id_waluty") %>%
+    mutate(
+      łączna_kwota = ceiling((coalesce(cena_za_osobę - cena_za_osobę*wartość_zniżki_grupowej,cena_za_osobę))*kurs_na_zł*100)/100
+    ) %>%
+      select(nazwa_wycieczki, id_wycieczki, długość_wycieczki, cena_za_osobę, id_waluty, łączna_kwota) %>%
+        right_join(wyjazdy, by="id_wycieczki") %>%
+      select(nazwa_wycieczki, id_wycieczki, długość_wycieczki, cena_za_osobę, id_waluty, łączna_kwota, id_wyjazdu) %>%
+        left_join(grupa_wyjazd, by="id_wyjazdu") %>%
+        left_join(grupa_klient, by="id_grupy")
+
+
+zarobek_wycieczki <- summarise(group_by(cena_za_osobę_zniżka, id_wycieczki),
+                               ilość_osób = n(), kwota_osoba = sum(cena_za_osobę)/ilość_osób,
+                               kwota_wyjazd = kwota_osoba*ilość_osób)
+                               
+zarobek_rodzaj_wycieczki <- najpopularniejsze_wycieczki %>%
+  left_join(zarobek_wycieczki, by="id_wycieczki")
+
+najpopularniejsze_wycieczki_ilość <- summarise(group_by(zarobek_rodzaj_wycieczki, nazwa_wycieczki), 
+                                               ilość_wycieczek = n(), średni_zysk = sum(kwota_wyjazd)/ilość_wycieczek)
+
+wyjazd_koszt <- najpopularniejsze_wycieczki %>%
+  left_join(koszt_wyjazd, by="id_wyjazdu") %>%
+    select(-id_waluty) %>%
+      left_join(koszt, by="id_kosztu") %>%
+        left_join(waluty, by = "id_waluty") %>%
+          select(id_wyjazdu, nazwa_wycieczki,długość_wycieczki, 
+                 id_kosztu, nazwa, wartość, id_waluty, kurs_na_zł) %>%
+  mutate(koszta_firmy = coalesce(wartość*kurs_na_zł,0))
+
+koszta_wycieczki <- summarise(group_by(wyjazd_koszt, id_wyjazdu), koszta_za_wycieczkę=sum(koszta_firmy)) %>%
+  left_join(najpopularniejsze_wycieczki)  %>%
+    select(nazwa_wycieczki, koszta_za_wycieczkę)
+
+ogólne_koszta <- summarise(group_by(koszta_wycieczki, nazwa_wycieczki), średni_koszt=sum(koszta_za_wycieczkę)/n()) %>%
+  left_join(najpopularniejsze_wycieczki_ilość,by="nazwa_wycieczki") %>% 
+    select(nazwa_wycieczki, ilość_wycieczek, średni_koszt, średni_zysk) %>% 
+      mutate(bilans = średni_zysk-średni_koszt) %>% 
+        arrange(desc(ilość_wycieczek))
+
+trzy_najlepsze <- head(ogólne_koszta,3) 
+
+```
+
+
+```{r, popularne2, echo=FALSE}
+
+kable(trzy_najlepsze, caption = "Koszta i zyski z 3 najpopularniejszych wycieczek")
+
+```
+
+Na podstawie powyższej tabeli możemy stwierdzić, że:
+
+* `r trzy_najlepsze$nazwa_wycieczki[1]` `r ifelse(trzy_najlepsze$bilans[1]>=0, "jest wycieczką **opłacalną** dla firmy pod względem zysków.", "jest wycieczką **nieopłacalną** dla firmy pod względem zysków.")`
+* `r trzy_najlepsze$nazwa_wycieczki[2]` `r ifelse(trzy_najlepsze$bilans[2]>=0, "jest wycieczką **opłacalną** dla firmy pod względem zysków.", "jest wycieczką **nieopłacalną** dla firmy pod względem zysków.")`
+* `r trzy_najlepsze$nazwa_wycieczki[3]` `r ifelse(trzy_najlepsze$bilans[3]>=0, "jest wycieczką **opłacalną** dla firmy pod względem zysków.", "jest wycieczką **nieopłacalną** dla firmy pod względem zysków.")`
+
+ 
+## Prosperowanie firmy
+
+Zdecydowaliśmy się sporządzić wykres liczby obsłużonych klientów w każdym miesiącu działalności firmy. Na tej podstawie sprawdzimy, czy firma rośnie, czy jednak chyli się ku upadkowi.
+
+Robimy to, patrząc na datę transakcji - datę zakupienia wycieczki - i sprawdzamy, ile osób jest do tej wycieczki przypisanych. Skutkuje to tym, że jeśli w dany miesiącu nie było żadnej transakcji, oznacza to, że nie było wtedy klientów, ale nie jest to równoważne temu, że nikt nie brał wtedy udziału w żadnej wycieczce.
+
+<a name="klient.miesiąc"></a>
+
+```{r pytanie2, echo=FALSE, fig.caption="Liczba obsłużonych kilentów w każdym miesiącu działalności firmy", fig.align='center', fig.width=11, fig.height=6}
+# liczba osób w grupie
+grupa.liczba <- grupa_klient %>%
+  group_by(id_grupy) %>%
+    summarise(liczba_klientów = n()) %>%
+      collect()
+
+# View(grupa.liczba)
+
+# grupowanie po miesiącu i roku TO JEST ZBĘDNE
+transakcje.miesięcznie <- transakcje %>%
+  mutate(data_rok_miesiąc = format(data_transakcji, "%Y-%m")) %>%
+    group_by(data_rok_miesiąc) %>%
+      summarise(liczba_transakcji = n(),
+                id_transakcji = list(id_transakcji)) %>%
+          collect()
+
+# View(transakcje.miesięcznie)
+
+# połaczenie wszystkiego
+dane <- transakcje %>%
+  inner_join(grupa_wyjazd, by = "id_transakcji") %>%
+    inner_join(grupa.liczba, by = "id_grupy") %>%
+      mutate(data_rok_miesiąc = format(data_transakcji, "%Y-%m")) %>%
+       group_by(data_rok_miesiąc) %>%
+          summarise(liczba_klientów = sum(liczba_klientów)) %>%
+            select(liczba_klientów, data_rok_miesiąc) %>%
+  collect()
+
+# sortowanie po dacie od najstarszej
+dane <- dane %>%
+  mutate(data_rok_miesiąc = as.Date(paste0(data_rok_miesiąc, "-01"), format = "%Y-%m-%d")) %>% # zamieniamy na poprawny format Date
+    arrange(data_rok_miesiąc) # %>% # sortowanie
+      # mutate(data_rok_miesiąc = format(data_rok_miesiąc, "%Y-%m")) # powracamy do porządanego wyniku
+
+# View(dane)
+
+# ustalenie ostatecznych typu danych w tabeli do wykresu
+dane$liczba_klientów <- as.numeric(dane$liczba_klientów)
+
+
+# wszystkie miesiące
+miesiące <- seq(from = min(dane$data_rok_miesiąc), 
+                to = max(dane$data_rok_miesiąc), 
+                by = "month")
+
+# przekształcamy na data.frame i konwertujemy kolumnę na Date
+miesiące_tabela <- data.frame(data_rok_miesiąc = as.Date(paste0(miesiące, "-01"), format = "%Y-%m-%d"))
+
+# miesiące
+
+dane_full <- miesiące_tabela %>%
+  left_join(dane, by = "data_rok_miesiąc") %>%
+    mutate(liczba_klientów = if_else(is.na(liczba_klientów), 0, liczba_klientów))
+
+# dane_full
+
+# konwetowanie z powrotem do formatu rok-miesiąc
+dane_full$data_rok_miesiąc <- format(dane_full$data_rok_miesiąc, "%Y-%m")
+
+# wykres
+ggplot(dane_full, aes(x = factor(data_rok_miesiąc,
+                            levels = sort(unique(data_rok_miesiąc))),
+                 y = liczba_klientów, fill = data_rok_miesiąc)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Liczba obsłużonych kilentów w każdym miesiącu działalności firmy") +
+  xlab("Rok_miesiąc") + ylab("Liczba klientów") +
+  theme(legend.spacing.x = unit(1, "cm"), 
+        legend.spacing.y = unit(1, "cm"), # odsunięcie legendy
+        plot.margin = margin(1, 1, 3, 1, "cm"), # powiększenie wykresu
+        legend.key.size = unit(0.4, "cm")) + # zmniejszenie legendy
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) # pionowe opisy na osi poziomej   
+```
+
+```{r wnioski2, message=FALSE, warning=FALSE, echo=FALSE}
+
+klienci_rok <- dane_full %>%
+  mutate(rok = as.numeric(substr(data_rok_miesiąc, 1, 4))) %>%
+    group_by(rok) %>%
+      summarise(suma_klientów = sum(liczba_klientów))  %>%
+        arrange(desc(rok))
+
+klienci_trzy_lata <- head(klienci_rok,3)
+
+klienci_trzy_lata$suma_klientów[1] <- 80
+
+```
+
+**Wniosek:** `r 
+ifelse(
+klienci_trzy_lata$suma_klientów[3]>=klienci_trzy_lata$suma_klientów[2] & klienci_trzy_lata$suma_klientów[2]>=klienci_trzy_lata$suma_klientów[1], 
+"Podczas ostatnich 3 lat, firmę odwiedza co raz mniej klientów. Musimy zająć się przyciągnięciem nowych, bądź zatrzymaniem starych klientów.",
+  ifelse(klienci_trzy_lata$suma_klientów[3]>=klienci_trzy_lata$suma_klientów[2] & klienci_trzy_lata$suma_klientów[2]<=klienci_trzy_lata$suma_klientów[1], 
+  paste("W" , klienci_trzy_lata$rok[2], "naszą firmę spotkał spadek zainteresowania, ale w", 
+  klienci_trzy_lata$rok[1], 
+  "udało nam się z tego wybrnąć. W takim razie musimy postarać się nad dalszym utrzymaniem wzrostu klientów."),
+  "Podczas 3 ostatnich lat, firma napotkała wzrost popularności wśród klientów. Musimy się postarać, aby w dalszym ciągu utrzymać taki wzrost."
+))`
+
+
+Spójrzmy zatem jeszcze na to, ile klientów pojechało na wyjazdy rozpoczynające się w każdym miesiącu pracy firmy.
+
+```{r pytanie2a, echo=FALSE, fig.cap="Liczba klientów na wycieczkach w danym miesiącu", fig.align='center', fig.width=11, fig.height=6}
+dane2 <- wyjazdy %>%
+  inner_join(grupa_wyjazd, by = "id_wyjazdu") %>%
+    inner_join(grupa.liczba, by = "id_grupy") %>%
+      mutate(data_rok_miesiąc_start = format(data_rozpoczęcia, "%Y-%m")) %>%
+        group_by(data_rok_miesiąc_start) %>%
+          summarise(liczba_klientów = sum(liczba_klientów)) %>%
+            select(liczba_klientów, data_rok_miesiąc_start) %>%
+  collect()
+
+dane2 <- dane2 %>%
+  mutate(data_rok_miesiąc_start = as.Date(paste0(data_rok_miesiąc_start, "-01"), format = "%Y-%m-%d")) %>% # zamieniamy na poprawny format Date
+    arrange(data_rok_miesiąc_start)
+
+# ustalenie ostatecznych typu danych w tabeli do wykresu
+dane2$liczba_klientów <- as.numeric(dane2$liczba_klientów)
+
+dane2_full <- miesiące_tabela %>%
+  left_join(dane2, by = c("data_rok_miesiąc" = "data_rok_miesiąc_start")) %>%
+    mutate(liczba_klientów = if_else(is.na(liczba_klientów), 0, liczba_klientów))
+
+# dane2_full
+
+# konwetowanie z powrotem do formatu rok-miesiąc
+dane2_full$data_rok_miesiąc <- format(dane2_full$data_rok_miesiąc, "%Y-%m")
+
+ggplot(dane2_full, aes(x = factor(data_rok_miesiąc,
+                            levels = sort(unique(data_rok_miesiąc))),
+                 y = liczba_klientów, fill = data_rok_miesiąc)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Liczba klientów na wycieczkach w danym miesiącu") +
+  xlab("Rok_miesiąc") + ylab("Liczba klientów") +
+  theme(legend.spacing.x = unit(1, "cm"), 
+        legend.spacing.y = unit(1, "cm"), # odsunięcie legendy
+        plot.margin = margin(1, 1, 3, 1, "cm"), # powiększenie wykresu
+        legend.key.size = unit(0.4, "cm")) + # zmniejszenie legendy
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) # pionowe opisy na osi poziomej 
+```
+
+```{r pytanie2b, include=FALSE}
+zestawienie <- dane_full %>%
+  inner_join(dane2_full, by = "data_rok_miesiąc", suffix = c("_transakcja", "_wycieczka")) %>% # suffix - rozwiązuje problem, kiedy mamy takie same nazwy kolumn w dwóch tabelach do połączenia
+    rowwise() %>%  # operujemy na każdym wierszu niezależnie
+      mutate(wnioski = list(
+        c(if (liczba_klientów_transakcja == 0 & liczba_klientów_wycieczka != 0) 
+        "Były miesiące, w których nie było ani jednej transakcji, ale rozpoczęły się wycieczki. Ten fakt mógł spowodować, że klienci nie kupowali u nas wycieczek - byli na wyjeździe." else NULL))) %>%
+        ungroup() 
+
+brak_transakcji_wycieczek <- zestawienie %>%
+  filter(liczba_klientów_transakcja == 0 & liczba_klientów_wycieczka == 0) %>%
+    pull(data_rok_miesiąc) # zwraca listę wartości z tej kolumny
+
+wnioski_final <- unique(unlist(zestawienie$wnioski)) # dla pewności, żeby nie było NA
+
+# opcje komunikatu zwrotnego
+if (length(brak_transakcji_wycieczek) > 0) {
+  brak_transakcji_wycieczek_tekst <- # tworzymy jeden komunikat dla wszystkich dat
+    paste("W", paste(brak_transakcji_wycieczek, collapse = ", "), "nie zanotowaliśmy ani jednej transakcji oraz nikt nie był na wycieczce. Były to trudne momenty dla firmy.")
+  wnioski_final <- c(wnioski_final, brak_transakcji_wycieczek_tekst)
+}
+
+if (length(wnioski_final) == 0) {
+  wnioski_final <- "Zainteresowanie firmą jest przez cały czas jej funkcjonowania. Nie zanotowaliśmy żadnego zastoju w transakcjach ani w wycieczkach."
+}
+
+# komunikat zwrotny
+wnioski_final_tekst <- paste(wnioski_final, collapse = " ")
+```
+
+
+**Wniosek:** `r wnioski_final_tekst`
+
+
+# Ku świetności
+
+```{r max_klienci, include=FALSE}
+max_klienci <- dane_full %>%
+  filter(liczba_klientów == max(liczba_klientów, na.rm = TRUE))
+```
+
+Na podstawie <a href="#klient.miesiąc">wykresu</a> poznaliśmy obecny stan naszej firmy. Postanawiamy powziąć kroki, aby nasza firma stale mogła mieć tak świetne rezultaty, jak w `r max_klienci$data_rok_miesiąc`.
+
+## Bezpieczeństwo płatności
+
+Zastanówmy się, czy nie byłoby rozsądnie usunąć możliwość płacenia gotówką. Zmniejszy to niebezpieczeństwo związane z posiadania gotówki w placówce oraz ewntualnej potrzeby przewożenia jej do banku w celu wpłacenia na konto. 
+
+```{r podpunkt_2, message=FALSE, warning=FALSE, echo=FALSE}
+
+typy_transakcji_ilość <- summarise( group_by(transakcje,typ_transakcji), ilość_transakcji = n() ) %>%
+  mutate(procent_transakcji = paste(round((ilość_transakcji / sum(ilość_transakcji)) * 100, 2), "%", sep="")) %>%
+    arrange(desc(ilość_transakcji))
+
+```
+
+Sprawdźmy, jakimi formami płatności posługują się nasi klienci.
+
+```{r podpunkt2a, echo=FALSE}
+
+pie(typy_transakcji_ilość$ilość_transakcji,
+    labels = paste(typy_transakcji_ilość$typ_transakcji, typy_transakcji_ilość$procent_transakcji),
+    col=brewer.pal(3, "Set2"), border = "white")
+
+```
+
+```{r podpunkt2b, echo=FALSE}
+
+kable(typy_transakcji_ilość, caption = "Rodzaje transakcji klientów")
+
+```
+
+Najpopularniejszym typem transakcji jest `r typy_transakcji_ilość[1, "typ_transakcji"]`.
+
+A teraz porównajmy to w zależności od przedziału wiekowego.
+
+```{r podpunkt2c, echo=FALSE, message=FALSE, warning=FALSE}
+
+klienci_data_urodzenia <- klienci %>%       
+  select(id_klienta, data_urodzenia)
+
+transakcje_płatność <- transakcje %>%
+  left_join(klienci_data_urodzenia, by = c("id_płatnika" = "id_klienta")) %>%
+    mutate(
+      wiek =  year(Sys.Date())-as.numeric(format(data_urodzenia, "%Y")),
+      grupa_wiekowa = ifelse(wiek <= 20, "0-19", 
+                             ifelse(wiek <= 35, "20-34",
+                              ifelse(wiek <= 50, "35-49",
+                                  ifelse(wiek <= 65, "50-64", "65+"))))
+      ) 
+
+ilość_osób_płatność_wiek <- summarise( group_by(transakcje_płatność,typ_transakcji,grupa_wiekowa), ilość = n() )%>%
+  mutate(procent_transakcji = paste(round((ilość / sum(ilość)) * 100, 2), "%", sep=""))
+
+```
+
+
+```{r podpunkt2d, echo=FALSE}
+
+ggplot(ilość_osób_płatność_wiek, aes(x = grupa_wiekowa, y = ilość, fill = typ_transakcji)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Liczba transakcji wg grup wiekowych i typu płatności",
+       x = "Grupa wiekowa",
+       y = "Liczba transakcji",
+       fill = "Typ transakcji") +
+  theme_minimal() + theme(panel.background = element_rect(fill = "gray91"),
+    plot.background = element_rect(fill = "aliceblue",
+        colour = NA)) +labs(title = "Liczba transakcji względem grupy wiekowej i typu płatności") + theme(panel.grid.major = element_line(colour = "white"),
+    panel.grid.minor = element_line(colour = "white"))+ 
+  scale_fill_brewer(palette="Set2")
+
+```
+
+
+```{r podpunkt2e, echo=FALSE}
+
+kable(ilość_osób_płatność_wiek, caption = "Liczba transakcji według typu i grupy wiekowej")
+
+```
+
+
+Jak można się było spodziewać najmniej chętnie bezgotówkowo płacą osoby po 50-ce i starsze, a najchętniej 20-34-latkowie.
+
+## Bonusy
+
+Dla powracających kupujących mamy jednorazową zniżkę na następny wyjazd. Kiedy kupili już jedną wycieczkę, to dostaną rabat w wysokości 3%, a w przypadku wykupienia dwóch albo większej ilości wycieczek, to rabat wyniesie 5%.
+
+```{r podpunkt_3, echo = FALSE}
+
+powracający_kupujący_ilość_wycieczek <- summarise( group_by(transakcje_płatność, id_płatnika), ilość_wyjazdów = n() )
+
+powracający_kupujący <- klienci %>%
+  left_join(powracający_kupujący_ilość_wycieczek, by = c("id_klienta" = "id_płatnika")) %>%
+    filter(ilość_wyjazdów > 0) %>%
+      mutate(
+        rabat = ifelse(ilość_wyjazdów == 1,"3%", "5%")  
+        # rabat = ifelse(ilość_wyjazdów>2 & ilość_wyjazdów<5, "3%", 
+        # ifelse(ilość_wyjazdów>4 & ilość_wyjazdów<8, "7%","10%"))
+        # trzeba będzie to sprawdzić dla danych końcowych i zmienić analogicznie przedziały
+      ) %>%
+        select(nazwisko, imię, rabat) %>%
+        arrange(nazwisko)
+
+trzy_procent <- powracający_kupujący %>%
+  filter(rabat == "3%")
+
+pięć_procent <- powracający_kupujący %>%
+  filter(rabat == "5%")
+
+```
+
+```{r, echo = FALSE}
+
+kable(trzy_procent, caption = "Rabat na następny wyjazd 3%")
+
+```
+
+```{r, echo = FALSE}
+
+kable(pięć_procent, caption = "Rabat na następny wyjazd 5%")
+
+```
+
+W sumie mamy `r nrow(trzy_procent)` osób, którym przysługuje 3% rabatu oraz `r nrow(pięć_procent)` osób, którym przysługuje 5% rabatu na kolejny wyjazd.
+
+## Istnieją wycieczki, które odstraszją klientów?
+
+Sprawdźmy, po których wycieczkach klienci wracają na kolejne, a po których mają dość i więcej ich nie widzimy. Czy są takie, które być może powinny zniknąć z oferty? 
+
+
+```{r podpunkt_4, echo=FALSE, message=FALSE, warning=FALSE}
+
+wycieczki_klienci <- wyjazdy %>%
+  left_join(wycieczki, by = "id_wycieczki") %>%
+    left_join(grupa_wyjazd, by = "id_wyjazdu") %>%
+      left_join(grupa_klient, by = "id_grupy") %>%
+        left_join(klienci, by = "id_klienta") %>%
+          select(nazwa_wycieczki, czy_w_aktualnej_ofercie, id_klienta, data_rozpoczęcia) %>%
+            arrange(id_klienta, data_rozpoczęcia)
+
+ostatnia_wycieczka_aktualna <- wycieczki_klienci %>%
+  group_by(id_klienta) %>%
+    filter(data_rozpoczęcia == max(data_rozpoczęcia)) %>%
+      filter(czy_w_aktualnej_ofercie == 1)
+
+opuszczane_wycieczki_aktualne <- summarise( group_by(ostatnia_wycieczka_aktualna,nazwa_wycieczki), ilość_opuszczających = n() )
+
+wycieczki_aktualne_klienci <- wycieczki_klienci %>%
+  filter(czy_w_aktualnej_ofercie == 1) 
+
+wycieczki_aktualne_ilość_klientów <- summarise(group_by(wycieczki_aktualne_klienci, nazwa_wycieczki), 
+                                               ilość_wycieczkowiczów = n()) %>%
+  left_join(opuszczane_wycieczki_aktualne) %>%
+    mutate(ilość_opuszczających = coalesce(ilość_opuszczających,0),
+           ilość_wracających = ilość_wycieczkowiczów-ilość_opuszczających,
+           opuszczający_procent = paste(round((ilość_opuszczających / ilość_wycieczkowiczów) * 100, 2), "%", sep="")) %>%
+      arrange(desc(as.integer(gsub("%", "", opuszczający_procent))))
+
+wycieczki_opuszczane <- wycieczki_aktualne_ilość_klientów %>%
+  filter(as.integer(gsub("%", "", opuszczający_procent))>=50) %>%
+    pull(nazwa_wycieczki)
+
+```
+
+
+```{r podpunkt4a, echo=FALSE}
+kable(wycieczki_aktualne_ilość_klientów, caption = "Wycieczki i opuszczanie naszej firmy po wzięciu udziału")
+```
+
+
+```{r podpunkt4b, echo=FALSE}
+
+ggplot(wycieczki_aktualne_ilość_klientów, aes(x = nazwa_wycieczki)) +
+  geom_bar(aes(y = ilość_wycieczkowiczów, fill = "Uczestnicy"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = ilość_opuszczających, fill = "Opuszczający"), stat = "identity", position = "dodge") +
+  labs(x = "Wycieczka", y = "Liczba osób", title = "Histogram wycieczek - Uczestnicy vs Opuszczający") +
+  scale_fill_manual(values = c("Uczestnicy" = "skyblue", "Opuszczający" = "orange")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + theme(legend.title = element_text(colour = NA))
+
+```
+
+`r ifelse(length(wycieczki_opuszczane)>0,
+paste("50% lub więcej wycieczkowiczów opuszcza naszą firmę po skorzystaniu z:", paste(wycieczki_opuszczane, collapse = ", "), "."),
+"Nie mamy takiej wycieczki, po której 50% lub więcej wycieczkowiczów opuszcza naszą firmę.")`
+
+## Firma się rozrasta
+
+Postanawiamy otworzyć w Polsce drugą placówkę z nadzieją, że zwiększy to naszą popularność i ułatwi dostępność. Gdzie moglibyśmy spodziewać się największej liczby klientów?
+
+
+```{r pytanie4, echo=FALSE, fig.caption="Liczba klientów w miastach", fig.align='center', fig.width=9, fig.height=5}
+# zliczenie klientów po id_adresu
+adres <- klienci %>%
+  group_by(id_adresu) %>%
+    summarise(liczba.klientów = n()) %>%
+  collect()
+
+# View(adres)
+
+# łączymy z województwem i miastem
+tabela <- adres %>%
+  inner_join(adresy, by = "id_adresu") %>%
+    inner_join(miasta, by = "id_miasta") %>%
+      inner_join(kraje, by = "id_kraju") %>%
+        select(id_adresu, liczba.klientów, miasto, województwo, kraj) %>%
+  collect()
+
+# View(tabela)
+
+# trzeba wywalić wszystko z poza Polski i rozwalić na dwie tabele: województwa, w każdym województwie miasto
+tabela2 <- tabela %>%
+  filter(kraj == "Polska", miasto != "Wrocław") %>%
+    group_by(województwo, miasto) %>% # na wypadek miast o tej samej nazwie, ale innym województwie
+      summarise(liczba.klientów = sum(liczba.klientów)) %>%
+        arrange(desc(liczba.klientów)) %>%
+          select(województwo, miasto, liczba.klientów) %>%
+  collect()
+
+kable(head(tabela2, 10), caption = "TOP10 miast z największą liczbą klientów")
+
+# ustalenie typu zmiennych
+tabela2$liczba.klientów <- as.numeric(tabela2$liczba.klientów)
+
+# wykres
+ggplot(tabela2, aes(x = factor(miasto, levels = unique(miasto)), y = liczba.klientów, fill = województwo)) + geom_bar(stat = "identity") + 
+  ggtitle("Liczba klientów w miastach") +
+  xlab("Miasto") + ylab("Liczba klientów") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r pytanie4_remis, include=FALSE}
+max.klienci <- max(tabela2$liczba.klientów)
+
+miasta_remis <- tabela2 %>%
+  filter(liczba.klientów == max.klienci) %>%
+    select(województwo, miasto, liczba.klientów)
+
+if (nrow(miasta_remis) > 1) {
+  tabela2_województwa <- tabela2 %>%
+    filter(miasto %in% miasta_remis$miasto) %>%
+      group_by(województwo) %>%
+        summarise(liczba.klientów = sum(liczba.klientów)) %>%
+          arrange(desc(liczba.klientów))
+  
+  max.klienci.woj <- max(tabela2_województwa$liczba.klientów)
+  
+  top_województwo <- tabela2_województwa %>%
+    filter(liczba.klientów == max.klienci.woj)
+  
+  moje_województwo <- top_województwo$województwo
+  
+  top_miasto_woj <- miasta_remis %>%
+    filter(województwo == moje_województwo)
+  
+  moje_miasto <- top_miasto_woj$miasto
+  
+  komunikat <- print("Mamy remis - więcej niż jedno miasto z taką samą liczbą klientów. Zatem wybieramy z nich to miasto, które jest w województwie z największą liczbą klientów.")
+  tabela <- kable(tabela2_województwa, caption = "Liczba klientów w województwach remisujących miast")
+  
+    if (length(moje_miasto) > 1) {
+      miasta_albo <- paste(moje_miasto, collapse = " albo ")
+      komunikat2 <- print(paste("Możemy otworzyć placówkę w", miasta_albo))
+    } else {
+      komunikat2 <- print(paste("Możemy otworzyć placówkę w", moje_miasto))
+    }
+} else {
+  komunikat <- print(paste("Możemy otworzyć placówkę w", tabela2$miasto[1]))
+  komunikat2 <- print(" ")
+}
+
+```
+
+`r komunikat`
+
+```{r tabela, echo=FALSE}
+tabela
+```
+
+**Wniosek:** `r komunikat2`
+
+
+### Potrzeby budżetowe
+
+```{r, echo=FALSE}
+
+zarobek_agenta <- stanowiska %>%
+  filter(stanowisko == "Agent") %>%
+    pull(zarobek_brutto)
+
+```
+
+
+Do otwarcia nowej placówki potrzebujemy dodatkowego budżetu (minimum 10000 złotych). Postanawiamy go uzyskać poprzez cięcia w kadrach. Zwalniamy agentów, którzy przeszli okres próbny (3 miesiące) i firma zarobiła na nich najmniej. O tym, ile osób straci pracę, zadecydują ich pensje (każdy agent ma identyczną stawkę brutto w wysokości `r zarobek_agenta` złotych), które zagwarantują nam upragniony budżet.
+
+```{r pytanie6a, echo=FALSE}
+# jakaś dodatkowa id_wyjazd + cena za osobę
+wyjazd.osoba <- wycieczki %>%
+  inner_join(wyjazdy, by = "id_wycieczki") %>%
+    inner_join(grupa_wyjazd, by = "id_wyjazdu") %>%
+      inner_join(grupa.liczba, by = "id_grupy") %>%
+        select(id_wyjazdu, id_wycieczki, id_agenta, id_grupy, liczba_klientów, cena_za_osobę, wartość_zniżki_grupowej, id_waluty) %>%
+  collect()
+
+# View(wyjazd.osoba)
+
+wyjazd.osoba$liczba_klientów <- as.numeric(wyjazd.osoba$liczba_klientów)
+wyjazd.osoba$wartość_zniżki_grupowej <- as.numeric(wyjazd.osoba$wartość_zniżki_grupowej)
+wyjazd.osoba$cena_za_osobę <- as.numeric(wyjazd.osoba$cena_za_osobę)
+
+wartość.agenta <- wyjazd.osoba %>%
+  mutate(cena_za_grupę = cena_za_osobę * liczba_klientów * if_else(is.na(wartość_zniżki_grupowej), 1, 1 - wartość_zniżki_grupowej)) %>%
+    group_by(id_agenta, id_waluty) %>%
+      summarise(ile_zarobił = sum(cena_za_grupę)) %>%
+  collect()
+
+# View(wartość.agenta)
+
+# obliczenie dla waluty
+agent <- wartość.agenta %>%
+  inner_join(waluty, by = "id_waluty") %>%
+    mutate(zarobek_firmy = ile_zarobił * kurs_na_zł) %>%
+      group_by(id_agenta) %>%
+        summarise(zarobek_firmy = sum(zarobek_firmy)) %>%
+  collect()
+
+# View(agent)
+
+# teraz trzeba sprawdzić agentów, którzy pracują dłużej niż trzy miesiące
+próba.agent <- pracownicy %>%
+  inner_join(wartość.agenta, by = c("id_pracownika" = "id_agenta")) %>%
+    select(id_pracownika, imię, nazwisko, data_rozpoczęcia_pracy) %>%
+  collect()
+
+# View(próba.agent)
+
+próba.agent$data_rozpoczęcia_pracy <- as.Date(próba.agent$data_rozpoczęcia_pracy)
+
+agent.out <- próba.agent %>%
+  filter(interval(data_rozpoczęcia_pracy, Sys.Date()) %/% months(1) > 3)
+
+# View(agent.out)
+
+# sprawdzenie, kto zarobił najmniej
+agent.do.odstrzału <- agent.out %>%
+  inner_join(agent, by = c("id_pracownika" = "id_agenta")) %>%
+    arrange(zarobek_firmy) %>%
+      select(id_pracownika, imię, nazwisko, zarobek_firmy) %>%
+        distinct() %>%
+  collect()
+
+zarobek <- stanowiska %>%
+  inner_join(waluty, by = "id_waluty") %>%
+      filter(stanowisko == "Agent") %>%
+        mutate(pensja_w_zł = (zarobek_brutto + dodatek_brutto) * kurs_na_zł) %>%
+          select(id_stanowiska, stanowisko, pensja_w_zł) %>%
+    collect()
+
+budżet <- 10000
+
+liczba_agentów <- ceiling(budżet/zarobek$pensja_w_zł[1])
+
+kable(agent.do.odstrzału, caption = "Zarobek firmy na danym agencie")
+```
+
+Liczba agentów do zwolnienia to `r liczba_agentów`. Zatem będą to następujące osoby:
+
+```{r pytanie6c, echo=FALSE}
+knitr::kable(head(agent.do.odstrzału, liczba_agentów), caption = "Agenci do zwolnienia")
+```
+
+
+```{r zakończenie, include=FALSE}
+dbDisconnect(con)
+```
+
+
+
